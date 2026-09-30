@@ -1,0 +1,888 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CRT Terminal Hacking</title>
+  <meta name="description" content="Retro CRT Terminal Hacking deductive word game inspired by classic memory dumps." />
+  <meta property="og:title" content="CRT Terminal Hacking" />
+  <meta property="og:description" content="Retro CRT Terminal Hacking deductive word game inspired by classic memory dumps." />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <style>
+    /* ----------------------------------------------------
+       RETRO CRT TERMINAL STYLING
+       ---------------------------------------------------- */
+    :root {
+      --term-color: #00ff00;
+      --term-glow: #00ff00;
+      --term-glow-dim: rgba(0, 255, 0, 0.45);
+      --term-bg: #000000;
+      --term-dim: rgba(0, 255, 0, 0.15);
+      --term-highlight: rgba(0, 255, 0, 0.25);
+    }
+
+    /* Access Granted Blue State */
+    .terminal-container.state-win {
+      --term-color: #00e5ff;
+      --term-glow: #00e5ff;
+      --term-glow-dim: rgba(0, 229, 255, 0.5);
+      --term-dim: rgba(0, 229, 255, 0.18);
+      --term-highlight: rgba(0, 229, 255, 0.3);
+    }
+
+    /* System Lockout Red State */
+    .terminal-container.state-lockout {
+      --term-color: #ff2a2a;
+      --term-glow: #ff2a2a;
+      --term-glow-dim: rgba(255, 42, 42, 0.5);
+      --term-dim: rgba(255, 42, 42, 0.18);
+      --term-highlight: rgba(255, 42, 42, 0.3);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background-color: var(--term-bg);
+      color: var(--term-color);
+      font-family: 'Courier New', Courier, Monaco, 'Lucida Console', monospace;
+      font-size: 15px;
+      line-height: 1.45;
+      overflow-x: hidden;
+      user-select: none;
+      -webkit-font-smoothing: none;
+    }
+
+    /* Glowing phosphor effect */
+    .glow-text, 
+    .terminal-container,
+    button,
+    input {
+      color: var(--term-color);
+      text-shadow: 0 0 5px var(--term-glow), 0 0 10px var(--term-glow-dim);
+      transition: color 0.25s ease, text-shadow 0.25s ease, border-color 0.25s ease;
+    }
+
+    /* CRITICAL CRT OVERLAYS - scanlines with pointer-events: none */
+    .crt-scanlines {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: linear-gradient(
+        rgba(18, 16, 16, 0) 50%, 
+        rgba(0, 0, 0, 0.5) 50%
+      ), linear-gradient(
+        90deg,
+        rgba(255, 0, 0, 0.03),
+        rgba(0, 255, 0, 0.01),
+        rgba(0, 0, 255, 0.03)
+      );
+      background-size: 100% 4px, 6px 100%;
+      pointer-events: none; /* CRITICAL: Must not block clicks */
+      z-index: 999;
+    }
+
+    /* Subtle CRT screen curved vignette and flicker */
+    .crt-vignette {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      box-shadow: inset 0 0 120px rgba(0, 0, 0, 0.92);
+      pointer-events: none; /* CRITICAL: Must not block clicks */
+      z-index: 998;
+    }
+
+    /* Main Terminal Layout */
+    .terminal-container {
+      position: relative;
+      width: 100%;
+      min-height: 100vh;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      z-index: 10;
+    }
+
+    /* Top Controls and Terminal Header */
+    .terminal-header {
+      border-bottom: 2px solid var(--term-color);
+      padding-bottom: 12px;
+      margin-bottom: 20px;
+    }
+
+    .header-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .brand-title {
+      font-weight: bold;
+      letter-spacing: 2px;
+      font-size: 1.15rem;
+    }
+
+    .header-controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .sound-btn {
+      background: transparent;
+      border: 1px solid var(--term-color);
+      font-family: inherit;
+      font-size: 0.8rem;
+      padding: 3px 8px;
+      cursor: pointer;
+      text-transform: uppercase;
+    }
+
+    .sound-btn:hover {
+      background: var(--term-highlight);
+    }
+
+    .protocol-info {
+      opacity: 0.9;
+      font-size: 0.9rem;
+      letter-spacing: 1px;
+    }
+
+    /* Attempts Counter Display */
+    .attempts-wrapper {
+      margin-top: 10px;
+      font-size: 1.05rem;
+      font-weight: bold;
+      letter-spacing: 1px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .attempts-blocks {
+      display: inline-flex;
+      gap: 6px;
+    }
+
+    .attempt-block {
+      display: inline-block;
+      width: 14px;
+      height: 18px;
+      background-color: var(--term-color);
+      box-shadow: 0 0 6px var(--term-glow);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    .attempt-block.spent {
+      opacity: 0.15;
+      box-shadow: none;
+    }
+
+    /* 2-Column Split: Memory Dump & Terminal Log */
+    .terminal-workspace {
+      display: grid;
+      grid-template-columns: 1fr 1.15fr;
+      gap: 24px;
+      flex: 1;
+      align-items: start;
+    }
+
+    @media (max-width: 768px) {
+      .terminal-workspace {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Panel Headers */
+    .panel-heading {
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-bottom: 12px;
+      border-bottom: 1px dashed var(--term-color);
+      padding-bottom: 4px;
+      font-size: 0.95rem;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* Left Column: Memory Dump */
+    .left-column {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--term-dim);
+      padding: 16px;
+      border-radius: 4px;
+    }
+
+    .memory-dump-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    /* Dump Row & Clickable Word Button */
+    .dump-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 1.05rem;
+      font-family: inherit;
+    }
+
+    .hex-code {
+      opacity: 0.75;
+      font-weight: normal;
+      letter-spacing: 1px;
+      user-select: none;
+    }
+
+    .word-btn {
+      flex: 1;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--term-color);
+      font-family: inherit;
+      font-size: 1.05rem;
+      font-weight: bold;
+      letter-spacing: 2px;
+      text-align: left;
+      padding: 4px 10px;
+      cursor: pointer;
+      text-transform: uppercase;
+      outline: none;
+      transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+      position: relative;
+    }
+
+    .word-btn:hover:not(:disabled) {
+      background-color: var(--term-highlight);
+      border-color: var(--term-color);
+      box-shadow: 0 0 10px var(--term-glow-dim);
+      transform: translateX(4px);
+    }
+
+    .word-btn:active:not(:disabled) {
+      background-color: var(--term-color);
+      color: #000000;
+      text-shadow: none;
+    }
+
+    .word-btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    .word-btn.attempted-wrong {
+      opacity: 0.35;
+      text-decoration: line-through;
+    }
+
+    /* Right Column: Terminal Log */
+    .right-column {
+      background: rgba(0, 0, 0, 0.6);
+      border: 1px solid var(--term-dim);
+      padding: 16px;
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      height: 480px;
+    }
+
+    .log-viewport {
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 0.95rem;
+      letter-spacing: 1px;
+    }
+
+    /* Custom retro scrollbar */
+    .log-viewport::-webkit-scrollbar {
+      width: 6px;
+    }
+    .log-viewport::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.5);
+    }
+    .log-viewport::-webkit-scrollbar-thumb {
+      background: var(--term-color);
+      box-shadow: 0 0 4px var(--term-glow);
+    }
+
+    .log-line {
+      word-break: break-word;
+      animation: lineFadeIn 0.15s ease-out;
+    }
+
+    .log-line.system {
+      opacity: 0.85;
+    }
+
+    .log-line.user-guess {
+      font-weight: bold;
+      color: #ffffff;
+      text-shadow: 0 0 6px #ffffff;
+    }
+
+    .log-line.denied {
+      font-weight: bold;
+    }
+
+    .log-line.access-granted {
+      font-weight: bold;
+      font-size: 1.15rem;
+      letter-spacing: 2px;
+      padding: 6px 0;
+    }
+
+    .log-line.lockout {
+      font-weight: bold;
+      font-size: 1.1rem;
+      letter-spacing: 2px;
+      padding: 6px 0;
+    }
+
+    @keyframes lineFadeIn {
+      from { opacity: 0; transform: translateY(2px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Active Prompt Cursor */
+    .terminal-prompt-line {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+      border-top: 1px dashed var(--term-dim);
+      padding-top: 8px;
+      font-weight: bold;
+    }
+
+    .cursor {
+      display: inline-block;
+      width: 10px;
+      height: 16px;
+      background-color: var(--term-color);
+      box-shadow: 0 0 6px var(--term-glow);
+      animation: blink 0.9s infinite;
+      vertical-align: middle;
+    }
+
+    @keyframes blink {
+      0%, 49% { opacity: 1; }
+      50%, 100% { opacity: 0; }
+    }
+
+    /* Reboot Action Bar */
+    .reboot-container {
+      margin-top: 16px;
+      display: none;
+      animation: rebootPop 0.3s ease-out forwards;
+    }
+
+    @keyframes rebootPop {
+      from { opacity: 0; transform: scale(0.96); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    .reboot-btn {
+      width: 100%;
+      background: transparent;
+      border: 2px solid var(--term-color);
+      color: var(--term-color);
+      font-family: inherit;
+      font-size: 1.1rem;
+      font-weight: bold;
+      letter-spacing: 3px;
+      padding: 12px;
+      cursor: pointer;
+      text-transform: uppercase;
+      text-align: center;
+      box-shadow: 0 0 15px var(--term-glow-dim);
+      transition: all 0.2s ease;
+    }
+
+    .reboot-btn:hover {
+      background: var(--term-color);
+      color: #000000;
+      text-shadow: none;
+      box-shadow: 0 0 25px var(--term-glow);
+    }
+
+    /* Footer instruction / hint */
+    .terminal-footer {
+      margin-top: 20px;
+      border-top: 1px solid var(--term-dim);
+      padding-top: 10px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      opacity: 0.75;
+      letter-spacing: 1px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .hint-text {
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <!-- CRT Monitor Overlays (pointer-events: none is critical) -->
+  <div class="crt-scanlines" aria-hidden="true"></div>
+  <div class="crt-vignette" aria-hidden="true"></div>
+
+  <!-- Terminal Container -->
+  <div id="terminalApp" class="terminal-container">
+    
+    <!-- Terminal Header -->
+    <header class="terminal-header">
+      <div class="header-top-row">
+        <div class="brand-title">ROBCO INDUSTRIES (TM) TERMLINK PROTOCOL</div>
+        <div class="header-controls">
+          <button id="soundToggle" class="sound-btn" title="Toggle audio feedback">
+            [ AUDIO: ON ]
+          </button>
+        </div>
+      </div>
+      <div class="protocol-info">ENTER PASSWORD NOW - SECURITY LEVEL 7 PROTOCOL</div>
+      <div class="attempts-wrapper">
+        <span id="attemptsText">4 ATTEMPT(S) LEFT:</span>
+        <div id="attemptsBlocks" class="attempts-blocks">
+          <span class="attempt-block"></span>
+          <span class="attempt-block"></span>
+          <span class="attempt-block"></span>
+          <span class="attempt-block"></span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Workspace: 2-column layout -->
+    <main class="terminal-workspace">
+      
+      <!-- Left Column: Memory Dump with 12 7-letter words -->
+      <section class="left-column">
+        <div class="panel-heading">
+          <span>// MEMORY DUMP</span>
+          <span>7-BYTE REGS</span>
+        </div>
+        <div id="memoryDumpList" class="memory-dump-list">
+          <!-- Dynamically populated with 12 7-letter words padded with hex codes -->
+        </div>
+      </section>
+
+      <!-- Right Column: Terminal Log -->
+      <section class="right-column">
+        <div class="panel-heading">
+          <span>// TERMINAL LOG</span>
+          <span id="logStatus">MONITORING</span>
+        </div>
+        
+        <div id="terminalLog" class="log-viewport" role="log" aria-live="polite">
+          <!-- Terminal log output will be appended here -->
+        </div>
+
+        <div class="terminal-prompt-line">
+          <span>&gt;</span>
+          <span id="activePromptText">SELECT TARGET ENTRY...</span>
+          <span class="cursor" aria-hidden="true"></span>
+        </div>
+
+        <div id="rebootContainer" class="reboot-container">
+          <button id="rebootBtn" class="reboot-btn">
+            [ REBOOT (PLAY AGAIN) ]
+          </button>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="terminal-footer">
+      <span class="hint-text">RULE: MATCHES COUNT EXACT LETTER AND POSITION MATCHES ONLY</span>
+      <span>V5.4.1 SEC-NET</span>
+    </footer>
+
+  </div>
+
+  <!-- Vanilla JavaScript Game Logic -->
+  <script>
+    (function () {
+      'use strict';
+
+      // --- 1. Sound FX Synthesis using Web Audio API (Offline & Instant) ---
+      let audioEnabled = true;
+      let audioCtx = null;
+
+      function getAudioContext() {
+        if (!audioCtx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) {
+            audioCtx = new AudioContextClass();
+          }
+        }
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+        return audioCtx;
+      }
+
+      function playSound(type) {
+        if (!audioEnabled) return;
+        try {
+          const ctx = getAudioContext();
+          if (!ctx) return;
+
+          const now = ctx.currentTime;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+
+          if (type === 'hover') {
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(800, now);
+            gain.gain.setValueAtTime(0.015, now);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.04);
+            osc.start(now);
+            osc.stop(now + 0.04);
+          } else if (type === 'click') {
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(600, now);
+            osc.frequency.exponentialRampToValueAtTime(300, now + 0.05);
+            gain.gain.setValueAtTime(0.05, now);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);
+            osc.start(now);
+            osc.stop(now + 0.06);
+          } else if (type === 'denied') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(220, now);
+            osc.frequency.setValueAtTime(160, now + 0.08);
+            gain.gain.setValueAtTime(0.08, now);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+            osc.start(now);
+            osc.stop(now + 0.22);
+          } else if (type === 'win') {
+            // Arpeggio chime
+            [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
+              const noteOsc = ctx.createOscillator();
+              const noteGain = ctx.createGain();
+              noteOsc.type = 'square';
+              noteOsc.frequency.setValueAtTime(freq, now + idx * 0.09);
+              noteGain.gain.setValueAtTime(0.06, now + idx * 0.09);
+              noteGain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.09 + 0.25);
+              noteOsc.connect(noteGain);
+              noteGain.connect(ctx.destination);
+              noteOsc.start(now + idx * 0.09);
+              noteOsc.stop(now + idx * 0.09 + 0.26);
+            });
+          } else if (type === 'lockout') {
+            // Alarm buzzer
+            [280, 240, 200, 160].forEach((freq, idx) => {
+              const noteOsc = ctx.createOscillator();
+              const noteGain = ctx.createGain();
+              noteOsc.type = 'sawtooth';
+              noteOsc.frequency.setValueAtTime(freq, now + idx * 0.12);
+              noteGain.gain.setValueAtTime(0.09, now + idx * 0.12);
+              noteGain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.12 + 0.14);
+              noteOsc.connect(noteGain);
+              noteGain.connect(ctx.destination);
+              noteOsc.start(now + idx * 0.12);
+              noteOsc.stop(now + idx * 0.12 + 0.15);
+            });
+          } else if (type === 'reboot') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(150, now);
+            osc.frequency.exponentialRampToValueAtTime(900, now + 0.25);
+            gain.gain.setValueAtTime(0.06, now);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
+            osc.start(now);
+            osc.stop(now + 0.28);
+          }
+        } catch (e) {
+          // Audio context might be restricted before gesture
+        }
+      }
+
+      // --- 2. Word Pool: Verified EXACTLY 7 Letters Long ---
+      const RAW_WORD_POOL = [
+        "FALLING", "NETWORK", "SYSTEMS", "PROGRAM", "STATION", "REACTOR",
+        "STORAGE", "DEFENSE", "ROBOTIC", "MONITOR", "COMMAND", "CONSOLE",
+        "CIRCUIT", "BATTERY", "FAILURE", "PROJECT", "MACHINE", "PROCESS",
+        "WARFARE", "CARRIER", "MISSILE", "OUTPOST", "NUCLEAR", "SECRETS",
+        "ARCHIVE", "WARNING", "OFFICER", "GENERAL", "CONTROL", "GATEWAY",
+        "CONNECT", "SCANNED", "SERVICE", "PAYLOAD", "VIRTUAL", "DISPLAY",
+        "BACKUPS", "DYNAMIC", "FACTORY", "TACTICS", "UPGRADE", "VERSION",
+        "QUANTUM", "SENSORS", "SESSION", "TRACKER", "TURBINE", "VECTORS",
+        "TRIGGER", "WEATHER", "ROUTINE", "PRIMARY", "SEGMENT", "CLUSTER",
+        "MODULES", "HARVEST", "FIGHTER", "CRYSTAL", "CURRENT"
+      ];
+
+      // Strict enforcement: ensure every candidate is strictly 7 letters
+      const VERIFIED_7_LETTER_POOL = RAW_WORD_POOL.filter(word => word.length === 7);
+
+      // --- 3. Game State ---
+      const TOTAL_WORDS = 12;
+      const MAX_ATTEMPTS = 4;
+
+      let currentWords = [];
+      let secretPassword = "";
+      let attemptsRemaining = MAX_ATTEMPTS;
+      let isGameOver = false;
+
+      // DOM Elements
+      const terminalApp = document.getElementById('terminalApp');
+      const memoryDumpList = document.getElementById('memoryDumpList');
+      const terminalLog = document.getElementById('terminalLog');
+      const attemptsText = document.getElementById('attemptsText');
+      const attemptsBlocks = document.getElementById('attemptsBlocks');
+      const activePromptText = document.getElementById('activePromptText');
+      const rebootContainer = document.getElementById('rebootContainer');
+      const rebootBtn = document.getElementById('rebootBtn');
+      const soundToggle = document.getElementById('soundToggle');
+      const logStatus = document.getElementById('logStatus');
+
+      // Helper: Shuffle Array (Fisher-Yates)
+      function shuffle(array) {
+        const copy = [...array];
+        for (let i = copy.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [copy[i], copy[j]] = [copy[j], copy[i]];
+        }
+        return copy;
+      }
+
+      // Helper: Append line to Terminal Log
+      function appendLog(text, className = '') {
+        const line = document.createElement('div');
+        line.className = `log-line ${className}`.trim();
+        line.textContent = text;
+        terminalLog.appendChild(line);
+        terminalLog.scrollTop = terminalLog.scrollHeight;
+      }
+
+      // Helper: Generate Random 16-bit Hex Address
+      function generateRandomHex(baseHex) {
+        return '0x' + (baseHex).toString(16).toUpperCase().padStart(4, '0');
+      }
+
+      // Update Attempts Counter UI
+      function updateAttemptsUI() {
+        attemptsText.textContent = `${attemptsRemaining} ATTEMPT(S) LEFT:`;
+        const blocks = attemptsBlocks.querySelectorAll('.attempt-block');
+        blocks.forEach((block, index) => {
+          if (index < attemptsRemaining) {
+            block.classList.remove('spent');
+          } else {
+            block.classList.add('spent');
+          }
+        });
+      }
+
+      // Calculate Positional Match: Letter identical AND in the exact same index position
+      function calculatePositionalMatch(guess, target) {
+        let matches = 0;
+        for (let i = 0; i < 7; i++) {
+          if (guess[i] === target[i]) {
+            matches++;
+          }
+        }
+        return matches;
+      }
+
+      // Handle Word Click
+      function handleWordClick(word, buttonElement) {
+        if (isGameOver) return;
+
+        // Visual click feedback and sound
+        playSound('click');
+
+        // Print guessed word to Terminal Log
+        appendLog(`> ${word}`, 'user-guess');
+
+        // Check if correct
+        if (word === secretPassword) {
+          // ACCESS GRANTED
+          isGameOver = true;
+          playSound('win');
+
+          // Print ACCESS GRANTED
+          appendLog('ACCESS GRANTED', 'access-granted');
+          appendLog('AUTHENTICATION SUCCESSFUL.', 'system');
+          appendLog('SECURITY CLEARANCE LEVEL 7 CONFIRMED.', 'system');
+
+          // Turn text blue
+          terminalApp.classList.remove('state-lockout');
+          terminalApp.classList.add('state-win');
+
+          logStatus.textContent = 'ACCESS GRANTED';
+          activePromptText.textContent = 'SESSION ESTABLISHED.';
+
+          // Disable word buttons
+          disableAllWordButtons();
+
+          // Show Reboot button
+          rebootContainer.style.display = 'block';
+        } else {
+          // Calculate positional match
+          const matches = calculatePositionalMatch(word, secretPassword);
+          playSound('denied');
+
+          // Print match count to Terminal Log
+          appendLog(`Entry Denied. ${matches}/7 Correct.`, 'denied');
+
+          // Style attempted word
+          buttonElement.classList.add('attempted-wrong');
+
+          // Deduct 1 attempt
+          attemptsRemaining--;
+          updateAttemptsUI();
+
+          // Check Loss State
+          if (attemptsRemaining <= 0) {
+            isGameOver = true;
+            playSound('lockout');
+
+            // SYSTEM LOCKOUT
+            appendLog(`SYSTEM LOCKOUT. PASSWORD WAS: ${secretPassword}`, 'lockout');
+            appendLog('TERMINAL LOCKED. PLEASE CONTACT AN ADMINISTRATOR.', 'system');
+
+            // Turn text red
+            terminalApp.classList.remove('state-win');
+            terminalApp.classList.add('state-lockout');
+
+            logStatus.textContent = 'LOCKED OUT';
+            activePromptText.textContent = 'TERMINAL LOCKED.';
+
+            // Disable clicking
+            disableAllWordButtons();
+
+            // Show Reboot button
+            rebootContainer.style.display = 'block';
+          }
+        }
+      }
+
+      // Disable all clickable word buttons
+      function disableAllWordButtons() {
+        const buttons = memoryDumpList.querySelectorAll('.word-btn');
+        buttons.forEach(btn => {
+          btn.disabled = true;
+        });
+      }
+
+      // Initialize / Reboot Game
+      function initGame() {
+        // Reset state
+        isGameOver = false;
+        attemptsRemaining = MAX_ATTEMPTS;
+
+        // Reset theme colors to phosphor green
+        terminalApp.classList.remove('state-win', 'state-lockout');
+        rebootContainer.style.display = 'none';
+        logStatus.textContent = 'MONITORING';
+        activePromptText.textContent = 'SELECT TARGET ENTRY...';
+
+        updateAttemptsUI();
+
+        // 1. Select 12 unique words of exactly 7 letters
+        const shuffledPool = shuffle(VERIFIED_7_LETTER_POOL);
+        currentWords = shuffledPool.slice(0, TOTAL_WORDS);
+
+        // 2. Randomly select 1 to be the secret Password
+        secretPassword = currentWords[Math.floor(Math.random() * currentWords.length)];
+
+        // Clear and build left column memory dump
+        memoryDumpList.innerHTML = '';
+        let baseAddr = 0xF240 + Math.floor(Math.random() * 0x0500);
+
+        currentWords.forEach((word, index) => {
+          const row = document.createElement('div');
+          row.className = 'dump-row';
+
+          // Hex memory address (e.g. 0xFA12)
+          const hexCode = generateRandomHex(baseAddr + index * 0x0C);
+          const hexSpan = document.createElement('span');
+          hexSpan.className = 'hex-code';
+          hexSpan.textContent = hexCode;
+
+          // Word button
+          const wordBtn = document.createElement('button');
+          wordBtn.type = 'button';
+          wordBtn.className = 'word-btn';
+          wordBtn.textContent = word;
+          wordBtn.setAttribute('aria-label', `Select ${word}`);
+
+          wordBtn.addEventListener('mouseenter', () => {
+            if (!isGameOver) {
+              playSound('hover');
+              activePromptText.textContent = `HEX ${hexCode} // ${word}`;
+            }
+          });
+
+          wordBtn.addEventListener('mouseleave', () => {
+            if (!isGameOver) {
+              activePromptText.textContent = 'SELECT TARGET ENTRY...';
+            }
+          });
+
+          wordBtn.addEventListener('click', () => {
+            handleWordClick(word, wordBtn);
+          });
+
+          row.appendChild(hexSpan);
+          row.appendChild(wordBtn);
+          memoryDumpList.appendChild(row);
+        });
+
+        // Reset Terminal Log with boot sequence
+        terminalLog.innerHTML = '';
+        appendLog('ROBCO INDUSTRIES UNIFIED OPERATING SYSTEM', 'system');
+        appendLog('COPYRIGHT 2077 ROBCO INDUSTRIES', 'system');
+        appendLog('- SERVER 41 -', 'system');
+        appendLog('INITIALIZING MEMORY DUMP...', 'system');
+        appendLog('12 CANDIDATE WORDS PARSED (7-BYTE).', 'system');
+        appendLog('COMMENCE DECRYPTION SEQUENCE.', 'system');
+      }
+
+      // Audio Toggle Button Event
+      soundToggle.addEventListener('click', () => {
+        audioEnabled = !audioEnabled;
+        soundToggle.textContent = audioEnabled ? '[ AUDIO: ON ]' : '[ AUDIO: OFF ]';
+        if (audioEnabled) {
+          getAudioContext();
+          playSound('click');
+        }
+      });
+
+      // Reboot Button Event
+      rebootBtn.addEventListener('click', () => {
+        playSound('reboot');
+        initGame();
+      });
+
+      // Initial Start
+      initGame();
+
+    })();
+  </script>
+</body>
+</html>

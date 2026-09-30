@@ -1,0 +1,6 @@
+{
+  "name": "CRT Terminal Hacking",
+  "description": "Retro CRT Terminal Hacking deductive word game inspired by classic memory dumps.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
